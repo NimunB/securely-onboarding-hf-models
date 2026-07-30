@@ -1,0 +1,67 @@
+About the AI Security Institute The AI Security Institute is the world's largest and best-funded team dedicated to understanding advanced AI risks and translating that knowledge into action. We’re in the heart of the UK government with direct lines to No. 10 (the Prime Minister's office), and we work with frontier developers and governments globally. We’re here because governments are critical for advanced AI going well, and UK AISI is uniquely positioned to mobilise them. With our resources, unique agility and international influence, this is the best place to shape both AI development and government action. The deadline for applying to this role is Sunday 19th July 2026, end of day, anywhere on Earth. About the Team: Security Engineering at the AI Security Institute (AISI) exists to help our researchers move fast, safely. We treat security as a measurable, researcher-centric product.  We build secure-by-design platforms, automated governance, and intelligence-led detection that protects our people, partners, models, and data. We work shoulder to shoulder with research units and core technology teams, and we optimise for enablement over gatekeeping, proportionate controls, low ego, and high ownership.    What you might work on:
+* Help design and ship paved roads and secure defaults across our platform so researchers can build quickly and safely
+* Build tooling and reusable infrastructure-as-code modules that make the secure path the easy path
+* Build provenance and integrity into the software supply chain (signing, attestation, artefact verification, reproducibility)
+* Support strengthened identity, segmentation, secrets, and key management to create a defensible foundation for evaluations at scale
+* Develop automated, evidence-driven assurance mapped to relevant standards, reducing audit toil and improving signal
+* Create detections and response playbooks tailored to model evaluations and research workflows, and run exercises to validate them
+* Threat model new evaluation pipelines with research and core technology teams, fixing classes of issues at the platform layer
+* Assess third-party services and hardware/software supply chains, and introduce lightweight controls that raise the bar
+* Contribute to open standards and open source, and share lessons with the broader community where appropriate
+If you want to build security that accelerates frontier-scale AI safety research, and see your work land in production quickly, this is a good place to do it.   **** Role Summary: We're looking for a strong software engineer who's drawn to security. Someone who would rather ship a paved road than write a policy, and who's excited by the prospect of building the security foundations for frontier-scale AI safety research. You don't need to be a career security specialist. You do need to be a genuinely good engineer who thinks adversarially, cares about getting the defaults right, and wants to go deep on security over the coming years.  Working as a hands-on engineer on AISI's Security Engineering team, building the secure-by-default patterns, reusable controls, and guardrails that the rest of the organisation builds on top of. You'll spend at least your first year focused on platform and product security, embedding safe practices across the development lifecycle, hardening our cloud and CI/CD foundations, and partnering with engineers to fix classes of issues rather than one-off bugs.  You'll build influence through enablement, not enforcement. Over time, you'll extend these patterns. We expect your security depth to grow on the job; we'll back that with mentorship, learning budget, and real ownership early.    Responsibilities:
+* Write production-quality code and reusable infrastructure-as-code (Terraform, CDK, etc.) that delivers secure-by-default modules, bootstrap templates, and reference architectures
+* Build tooling for identity, secrets, environment isolation, and pipeline hardening
+* Develop and help maintain a baseline cloud control set (e.g. SCPs, logging, tagging) and improve cloud posture with automated feedback loops
+* Provide consulting and coaching to platform and product teams to support secure delivery
+* Threat model new and existing systems with research and core technology teams, and fix issues at the platform layer
+* Build provenance and integrity into the software supply chain (signing, attestation, artefact verification)
+* Help create detections and response playbooks, support post-incident reviews, and design for resilience
+* Align technical controls with governance and shared responsibility boundaries    Profile requirements: You may be a good fit if you have some of the following skills, experience, and attitudes:
+* Writing production-quality code at a fast pace, and designing, shipping, and maintaining complex tech products
+* A genuine pull towards security, you think adversarially, enjoy understanding how systems break, and want to make the secure path the default path
+* Strong Python and/or another production language, including the good vs. bad ways of doing things and a feel for the wider ecosystem and tooling
+* Experience building and maintaining systems on AWS or other cloud providers using infrastructure-as-code (Terraform, CDK, etc.)
+* Solid understanding of CI/CD pipelines and the software development lifecycle
+* You take the trajectory of frontier AI seriously, and you're motivated by the mission of making it safe
+* Strong written and verbal communication, and the ability to build influence in cross-functional environments
+* Improving technical standards across a team through mentoring and feedback
+Motivated candidates are encouraged to apply even if you don't meet all the above criteria. We care more about engineering ability, security instinct, and trajectory than a long security CV. Desired experience: We additionally may factor in experience with areas like:
+* Cloud security, identity, networking, and org-level services
+* Cybersecurity expertise (threat modelling, detection and response, supply-chain security, secrets management)
+* Software supply-chain security and provenance
+* ML Ops and AI/ML platform surfaces
+* Practical understanding of AI/ML risks
+Key Competencies:
+* Strong software engineering and the ability to design reusable IaC components
+* Security instinct: threat modelling, secure defaults, and paved paths
+* Collaboration across platform and research teams
+* Cloud fundamentals (AWS), with appetite to go deep on cloud security
+* Growing capability in securing AI/ML workloads and artefacts
+* Clear communication and influence without authority    Security Clearance: Appointment is conditional on successfully completing UK Government SC clearance. Prior clearance is not required—we will sponsor and support you. You should normally have been resident in the UK for the past 5 years. More detail on clearance eligibility can be found on the UK Government website: National security vetting: clearance levels - GOV.UK.
+What We Offer  Impact you couldn't have anywhere else
+* Incredibly talented, mission-driven and supportive colleagues.
+* Direct influence on how frontier AI is governed and deployed globally.
+* Work with the Prime Minister’s AI Advisor and leading AI companies.
+* Opportunity to shape the first & best-resourced public-interest research team focused on AI security.
+Resources & access
+* Pre-release access to multiple frontier models and ample compute.
+* Extensive operational support so you can focus on research and ship quickly.
+* Work with experts across national security, policy, AI research and adjacent sciences.
+Growth & autonomy
+* If you’re talented and driven, you’ll own important problems early.
+* 5 days off and annual stipends for learning and development, and funding for conferences and external collaborations.
+* Freedom to pursue research bets without product pressure.
+* Opportunities to publish and collaborate externally.
+Life & family*
+* Modern central London office (cafes, food court, gym), or where applicable, option to work in similar government offices in Birmingham, Cardiff, Darlington, Edinburgh, Salford or Bristol.
+* Hybrid working, flexibility for occasional remote work abroad and stipends for work-from-home equipment.
+* At least 25 days’ annual leave, 8 public holidays, extra team-wide breaks and 3 days off for volunteering.
+* Generous paid parental leave (36 weeks of UK statutory leave shared between parents + 3 extra paid weeks + option for additional unpaid time).
+* On top of your salary, we contribute 28.97% of your base salary to your pension.
+* Discounts and benefits for cycling to work, donations and retail/gyms.
+*These benefits apply to direct employees. Benefits may differ for individuals joining through other employment arrangements such as secondments.  Salary Annual salary is benchmarked to role scope and relevant experience. Most offers land between £65,000 and £145,000 made up of a base salary plus a technical allowance (take-home salary = base + technical allowance). An additional 28.97% employer pension contribution is paid on the base salary.  This role sits outside of the DDaT pay framework given the scope of this role requires in depth technical expertise in frontier AI safety, robustness and advanced AI architectures.  The full range of salaries are available below:
+* Level 3: £65,000–£75,000 (Base £39,850 + Technical Allowance £25,150–£35,150)
+* Level 4: £85,000–£95,000 (Base £47,355 + Technical Allowance £37,645–£47,645)
+* Level 5: £105,000–£115,000 (Base £61,620 + Technical Allowance £43,380–£53,380)
+* Level 6: £125,000–£135,000 (Base £74,605 + Technical Allowance £50,395–£60,395)
+* Level 7: £145,000 (Base £74,605 + Technical Allowance £70,395)
