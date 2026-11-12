@@ -34,6 +34,19 @@ from hfgate.scanner import scan  # noqa: E402
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
+def setUpModule():
+    """Generate the fixture repositories if absent. They are gitignored, so a
+    fresh checkout has none, and every fixture-backed test would fail."""
+    if not (FIXTURES / "allow-tinyllama-safetensors").is_dir():
+        import contextlib
+        import io
+
+        from fixtures.build_fixtures import main as build_fixtures
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            build_fixtures()
+
+
 def scan_fixture(name: str):
     return scan(FIXTURES / name)
 
