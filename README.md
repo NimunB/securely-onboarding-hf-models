@@ -1,114 +1,130 @@
 # hfgate
 
-**Checks a Hugging Face model before it's allowed into our environment, and says allow or
-quarantine with reasons.**
+Loading an untrusted model from Hugging Face is arbitrary code execution. Pickle-format
+weights and repository-supplied Python both run in the loading process, with that
+process's credentials, mounted data and network access, so a malicious or tampered model
+repository can exfiltrate secrets and data or move laterally into the surrounding
+infrastructure before the model produces any output.
 
-Loading a model can run code that the model's author wrote —-See
-[Part-1-Design.md](Part-1-Design.md) for the design document.
+hfgate is a static analyser that detects this before the model is loaded. It determines
+which load-time code-execution mechanisms a repository exposes, assigns a risk tier, and
+returns allow or quarantine with the evidence for that decision. It parses the
+repository's files and never deserialises or imports them.
 
----
+The repository contains a design document ([Part-1-Design.md](Part-1-Design.md)) and an
+implementation of two components of that design: the scan gate and the model registry.
 
-## What's in here
+## Threat model
 
-```
-Part-1-Design.md       the design document — start here
-hfgate/
-  __main__.py          the CLI: `scan` and `registry` commands
-  scanner.py           runs the four checks in order
-  checks/              those four, plus pickle_opcodes.py which weights.py calls
-  policy.py            turns findings into a tier          ← risk appetite lives here
-  report.py            renders the verdict for humans and machines
-  registry.py          the database and its promotion rules
-fixtures/
-  build_fixtures.py    generates six offline test models
-  fetch_real_model.py  pulls a real repo from the Hub to scan
-tests/                 44 tests
-```
+The setting is an organisation bringing open-weights models from Hugging Face into its
+compute environment. `from_pretrained()` is not a pure data read: two documented
+mechanisms let a model repository execute code in the loading process.
 
-Two files carry most of the thinking: [`policy.py`](hfgate/policy.py), which is the entire
-risk appetite in one screen, and [`checks/pickle_opcodes.py`](hfgate/checks/pickle_opcodes.py),
-which is the core detection.
+1. **Deserialisation.** PyTorch checkpoints (`.bin`, `.pt`, `.ckpt`) are pickle streams.
+   Pickle is a stack-machine bytecode: `GLOBAL`/`STACK_GLOBAL` resolve any importable
+   `module.attr` to a live object and `REDUCE` calls it. A stream that resolves `os.system`
+   and reduces it runs a shell command during `torch.load`, before any tensor is read.
+2. **Dynamic import.** If `config.json` contains an `auto_map` and the caller passes
+   `trust_remote_code=True`, `transformers` imports Python modules from the repository
+   (or from another repository that `auto_map` names) and instantiates classes from them.
 
----
-
-## Try it in 30 seconds
-
-No installation, no virtualenv, no dependencies. Python 3.9 or newer.
-
-```bash
-python3 fixtures/build_fixtures.py                              # make some test models
-python3 -m hfgate scan fixtures/allow-tinyllama-safetensors     # a good one
-python3 -m hfgate scan fixtures/quarantine-backdoored-finetune  # a bad one
-```
-
-Run the tests with `python3 -m unittest discover -s tests -v` (44 tests, well under a second).
-
----
-
-## What you get back
-
-A model that's fine:
-
-```
-========================================================================
-  ALLOW: meta-llama/TinyLlama-1.1B-Chat-fixture
-  Tier 1 - Trusted
-========================================================================
-
-Why:
-  - Allowlisted publisher `meta-llama` at pinned revision, data-only weight
-    format, no custom code
-```
-
-A model that isn't:
-
-```
-========================================================================
-  QUARANTINE: anon-research-42/custom-llama-finetune
-  Tier 4 - Blocked
-========================================================================
-
-Why:
-  - Pickle resolves `os.system`
-  - Shipped code calls `subprocess.run`
-  - Dependency `trasformers` resembles `transformers`
-
-What this means: the model is held at the mirror, not deleted. The
-findings below are the exit checklist -- resolve them (or request a
-reviewed exception) and rescan.
-```
-
-Each finding below the banner comes with where it was found and how to fix it.
-
-### The other outputs
-
-Every scan produces the same verdict in three more forms:
-
-| Output | What it's for |
+| | |
 |---|---|
-| `<model>.hfgate.json`, written automatically | Machine-readable: verdict, tier, reasons, all findings, an SBOM, provenance. Feeds the registry and any pipeline. |
-| Exit code: `0` allowed, `2` quarantined, `3` tool error | CI |
-| A registry row, if you pass `--register` | Permanent record of the verdict and who approved it |
+| **Adversary** | A model publisher, or anyone able to tamper with a legitimate repository. |
+| **Assets** | What the loading job can reach: cloud credentials, mounted datasets, other workloads on the cluster, outbound network access. |
+| **Threats covered** | Malicious weights; malicious repository code; a repository that changes after it was checked (a Hub repository is a git repository and `main` moves). |
+| **Property checked** | Loading the repository at a given commit does not execute adversary-supplied code. |
+| **Out of scope** | Model behaviour: harmful outputs, jailbreaks, and backdoors trained into the weights. None of it executes at load, and none of it is detectable by the analysis used here. |
 
----
+The full threat model is [section A of the design document](Part-1-Design.md#a-threat-model).
 
-## Reading a verdict
+## What I did
 
-4 tiers. The full reasoning is in [Part-1-Design.md](Part-1-Design.md#d-risk-tiering). The summary:
+1. **Threat model** for model intake, summarised above.
+   ([design doc, section A](Part-1-Design.md#a-threat-model))
+2. **System design** in five stages: mirror, scan gate, registry, runtime isolation,
+   observability. The gate and the registry are implemented here; the other three are
+   specified only. ([design doc, section B](Part-1-Design.md#b-system-design);
+   orchestration in [`scanner.py`](hfgate/scanner.py))
+3. **Pickle opcode scanner.** Parses the stream with `pickletools.genops`, extracts every
+   resolved global, and classifies each against a denylist and against the set of modules
+   a PyTorch state dict normally references. Handles both zip-archive and raw checkpoints.
+   ([`checks/pickle_opcodes.py`](hfgate/checks/pickle_opcodes.py), called from
+   [`checks/weights.py`](hfgate/checks/weights.py))
+4. **Repository code check.** Resolves `auto_map`, computes the transitive closure of
+   imports from the modules the loader enters, and matches denylisted calls in the AST of
+   each reachable file. Falls back to the whole repository when an import is dynamic.
+   ([`checks/remote_code.py`](hfgate/checks/remote_code.py))
+5. **Dependency and provenance checks.** An SBOM of declared requirements (unpinned,
+   VCS/URL, known misspellings), and publisher and revision-pinning metadata from the Hub.
+   ([`checks/sbom.py`](hfgate/checks/sbom.py),
+   [`checks/provenance.py`](hfgate/checks/provenance.py))
+6. **Tiering policy.** Four tiers, decided by which execution mechanisms are present.
+   Checks report findings; a separate file of about 170 lines maps findings to a tier.
+   ([`policy.py`](hfgate/policy.py);
+   [design doc, section D](Part-1-Design.md#d-risk-tiering))
+7. **Registry.** SQLite, keyed on repository and commit. A state machine with an
+   append-only audit trail; approving an Elevated model requires a recorded justification,
+   Blocked cannot be overridden, and a rescan withdraws an existing approval.
+   ([`registry.py`](hfgate/registry.py); [usage](#the-registry))
+8. **Evaluation** on six synthetic and six real repositories.
+   ([results](#evaluation); [`tests/test_hfgate.py`](tests/test_hfgate.py);
+   [`fixtures/build_fixtures.py`](fixtures/build_fixtures.py))
 
-| Tier | Meaning | What happens |
+The implementation has no third-party dependencies and runs on Python 3.9 or newer.
+
+## Risk by artefact type
+
+The tier is determined by which load-time execution mechanisms a repository exposes, not
+by who published it.
+
+| Artefact | Execution mechanism at load | What the scan establishes | Tier |
+|---|---|---|---|
+| **safetensors** | None. A length-prefixed JSON header followed by raw tensor bytes; the parser resolves no callables. | That the weights are in this format. | Standard or Trusted |
+| **GGUF** | None through deserialisation. Residual risk is memory-safety defects in the native parser. | Format only. | Standard |
+| **Pickle** (`.bin`, `.pt`, `.pth`, `.ckpt`, `.pkl`) | Arbitrary callable invocation by the pickle VM. | Which globals the stream resolves, not what they do when called. | Elevated or Blocked |
+| **NumPy** (`.npy`, `.npz`) | None for numeric arrays. Object arrays embed a pickle stream. | Object arrays are detected and scanned as pickle. | As for pickle |
+| **Keras / HDF5** (`.h5`, `.keras`) | `Lambda` layers can embed marshalled Python bytecode, executed when Keras rebuilds the model. | Presence only. The bytecode is not analysed. | Elevated |
+| **Repository Python** (`auto_map` with `trust_remote_code=True`) | Module import: top-level code and class constructors execute. | The reachable import graph, and denylisted calls within it. | Elevated or Blocked |
+| **Declared dependencies** | Not at load. Package installation executes build and install hooks. | Requirement names and specifiers. | Elevated or Blocked |
+
+**Pickle.** A stream is Blocked if it resolves a global in a denylisted module (`os`,
+`subprocess`, `socket`, …) or a denylisted callable (`eval`, `exec`, `getattr`, …), or if
+it begins parsing and then fails, since it cannot be fully inspected. A global outside
+the set a PyTorch state dict normally uses is Elevated. A stream with no findings is
+still Elevated: the absence of a denylisted global is weaker evidence than a format with
+no invocation mechanism.
+
+**Repository Python.** A denylisted call (`subprocess.*`, `eval`, `socket.socket`, …) in
+any file reachable from the modules `auto_map` names is Blocked. Everything else is
+Elevated regardless of how the code reads, because AST matching does not survive
+obfuscation. Dynamic imports (`importlib.import_module`, `__import__`) are themselves on
+the denylist, and they also make the import graph unbounded, so when a reachable module
+uses one, every Python file in the repository is treated as reachable. `auto_map` entries that point to
+another repository are reported separately: that code is not scanned, and pinning this
+repository's commit does not pin it.
+
+**Dependencies.** A name on a fixed list of known misspellings of popular packages is
+Blocked. A VCS or URL requirement is Elevated.
+
+**Unused formats.** A pickle or Keras file beside safetensors weights is recorded at low
+severity and does not raise the tier, on the assumption that the loader selects
+safetensors. That holds for `transformers` defaults, not for a caller who names the file
+explicitly. A denylisted global in such a pickle still blocks.
+
+**No recognised weights.** Elevated. This is usually an incomplete clone (git-lfs
+pointers not fetched), and the gate does not pass input it has not inspected.
+
+| Tier | Condition | Effect |
 |---|---|---|
-| **1 Trusted** | Known publisher, pinned commit, safetensors, no custom code | Allowed automatically |
-| **2 Standard** | Nothing can execute; publisher unknown | Allowed automatically |
-| **3 Elevated** | Something *could* execute, but nothing hostile found | Runs with no network access and no credentials; needs a recorded approval |
-| **4 Blocked** | Something hostile, or a file we couldn't inspect | Doesn't run |
+| **1 Trusted** | No execution mechanism; allowlisted publisher; pinned commit | Allowed |
+| **2 Standard** | No execution mechanism | Allowed |
+| **3 Elevated** | An execution mechanism exists; no evidence of hostile use | Quarantined pending a recorded approval; intended to run without network access or credentials |
+| **4 Blocked** | Evidence of hostile use, or an artefact that could not be inspected | Not run. Terminal for that commit |
 
-The important idea: **we judge what a model can do, not who published it.** An unknown
-author's safetensors model is allowed; a famous lab's tampered checkpoint is blocked.
+## Evaluation
 
----
-
-## The test models
+### The test models
 
 `fixtures/build_fixtures.py` generates six fake model repos. Each exists to pin one
 behaviour, so if you change the logic these tell you what you broke.
@@ -132,10 +148,7 @@ every reputational signal is good. It's still blocked, because the checkpoint it
 an instruction to call `eval`. It exists to prove the gate isn't just a popularity check, and
 a test fails if that ever stops being true.
 
-
 ### Running it against real Hugging Face models
-
-
 
 ```bash
 python3 fixtures/fetch_real_model.py sentence-transformers/all-MiniLM-L6-v2 --max-mb 120
@@ -149,6 +162,7 @@ invented. Files over the size cap are skipped and recorded in `hfgate_fetch_note
 a scan that quietly missed the weights would report a verdict it hadn't earned.
 
 What we tested:
+
 | Repo | Tier | Why |
 |---|---|---|
 | `sentence-transformers/all-MiniLM-L6-v2` | 1 Trusted | Allowlisted org, pinned, safetensors |
@@ -159,7 +173,7 @@ What we tested:
 | `sshleifer/tiny-gpt2` | 3 Elevated | Pickle-only plus a TF export |
 
 **This found four real bugs that the 30 passing tests did not.** Each now has a regression
-test:
+test, and the suite has since grown to 44:
 
 1. **`auto_map` can point at a *different repo*.** `nomic-ai/nomic-embed-text-v1.5` sources
    all seven classes from `nomic-ai/nomic-bert-2048` via the `repo--module.Class` syntax. The
@@ -181,7 +195,7 @@ test:
    safetensors either way.
 
 Three of those four were **false positives that would have blocked legitimate, popular
-models**
+models.**
 
 #### The fix that was wrong, and what replaced it
 
@@ -209,25 +223,55 @@ and the scan says why, rather than continuing to assert "this one doesn't run" o
 no longer has. Four tests cover this: the bypass, the relative-import form, an import cycle,
 and the dynamic-import fallback.
 
----
+## Limitations
 
-## What it checks
+- **The pickle analysis is a denylist over resolved globals.** It does not model what a
+  permitted callable does with attacker-controlled arguments, so a gadget chain built from
+  modules outside the denylist is not detected. This is why a clean pickle is Elevated and
+  not allowed.
+- **The code analysis is syntactic.** It matches call names in the AST. Aliasing,
+  string-built attribute access and encoded payloads can evade it. Containment at run time
+  is the control for Elevated models; the static result only distinguishes Elevated from
+  Blocked.
+- **Code in other repositories is not followed.**
+- **Keras bytecode and native parser defects are not analysed.**
+- **Backdoors trained into the weights are not detected.** A model with one can be tiered
+  Trusted. The tier is a statement about load-time code execution only.
+- **The mirror, runtime isolation and observability components of the design are not
+  implemented.** The Elevated tier's isolation is specified, not enforced, by this code.
+- **The publisher allowlist and the typosquat list are illustrative**, not maintained.
 
-| Check | Question it answers |
-|---|---|
-| [weights.py](hfgate/checks/weights.py) | What format are the weights, and can loading that format run code? |
-| [pickle_opcodes.py](hfgate/checks/pickle_opcodes.py) | If they're pickle format, do they contain instructions that call dangerous things? |
-| [remote_code.py](hfgate/checks/remote_code.py) | Does the repo ship Python that gets imported on load, and what does it do? |
-| [sbom.py](hfgate/checks/sbom.py) | What does the repo declare as dependencies — unpinned, typosquatted, or from a git URL? |
-| [provenance.py](hfgate/checks/provenance.py) | Who published it, and is the version pinned to a commit? |
+The design document discusses the accepted residual risk in
+[section E](Part-1-Design.md#e-what-we-deliberately-chose-not-to-do).
 
-The publisher allowlist and the typosquat list are illustrative rather than maintained; a real
-deployment would generate the latter from popular index names automatically.
+## Running it
 
-Checks only *report* what they find. A separate file, [policy.py](hfgate/policy.py), decides
-what those findings mean. 
+No installation is needed.
 
----
+```bash
+python3 fixtures/build_fixtures.py                              # generate the six fixtures
+python3 -m hfgate scan fixtures/allow-tinyllama-safetensors     # Tier 1, allowed
+python3 -m hfgate scan fixtures/quarantine-backdoored-finetune  # Tier 4, quarantined
+python3 -m unittest discover -s tests -v                        # 44 tests
+```
+
+Output for the backdoored fixture, followed by each finding with its location and
+remediation:
+
+```
+========================================================================
+  QUARANTINE: anon-research-42/custom-llama-finetune
+  Tier 4 - Blocked
+========================================================================
+
+Why:
+  - Pickle resolves `os.system`
+  - Shipped code calls `subprocess.run`
+  - Dependency `trasformers` resembles `transformers`
+```
+
+Each scan also writes `<model>.hfgate.json` (verdict, tier, reasons, all findings, an
+SBOM and provenance) and sets an exit code: `0` allowed, `2` quarantined, `3` tool error.
 
 ## The registry
 
@@ -301,8 +345,6 @@ Four rules that were implemented:
 - **Revoking works from any state**, because incident response must never be blocked by
   process.
 
----
-
 ## Running it automatically (CI)
 
 **What this is for.** The design's end state is that the mirror runs the gate invisibly, so
@@ -365,7 +407,19 @@ done
 exit $fail
 ```
 
----
+## Repository layout
 
-What this gate does *not* cover, and the residual risk we accept, is in
-[Part-1-Design.md](Part-1-Design.md#e-what-we-deliberately-chose-not-to-do).
+```
+Part-1-Design.md       design document
+hfgate/
+  __main__.py          CLI: `scan` and `registry`
+  scanner.py           runs the checks in order
+  checks/              weights, pickle_opcodes, remote_code, sbom, provenance
+  policy.py            maps findings to a tier
+  report.py            terminal and JSON output
+  registry.py          SQLite registry and its state machine
+fixtures/
+  build_fixtures.py    generates the six synthetic repositories
+  fetch_real_model.py  fetches a real repository from the Hub
+tests/test_hfgate.py   44 tests
+```
